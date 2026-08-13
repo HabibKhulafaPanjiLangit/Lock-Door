@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Sistem Keamanan Pintu - ESP32 CAM</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --accent: #38bdf8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 24px; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card h2 { font-size: 16px; margin-top: 0; color: var(--accent); }
+  form { display: flex; flex-direction: column; gap: 10px; }
+  input[type=text], input[type=file] {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: var(--text);
+    padding: 10px;
+    border-radius: 8px;
+  }
+  button {
+    background: var(--accent);
+    color: #0f172a;
+    border: none;
+    padding: 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  .msg { font-size: 13px; margin-top: 4px; }
+  .msg.ok { color: var(--green); }
+  .msg.err { color: var(--red); }
+  ul.list { list-style: none; padding: 0; margin: 0; max-height: 420px; overflow-y: auto; }
+  ul.list li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid #334155;
+  }
+  ul.list img { width: 42px; height: 42px; object-fit: cover; border-radius: 8px; }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.ok { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge.no { background: rgba(239,68,68,0.15); color: var(--red); }
+  .delete-btn {
+    margin-left: auto; background: transparent; color: var(--red);
+    border: 1px solid var(--red); padding: 4px 8px; font-size: 12px;
+  }
+  .name { font-weight: 600; }
+  .time { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>🔐 Sistem Keamanan Pintu</h1>
+<p class="sub">ESP32-CAM &rarr; Face Recognition &rarr; Relay Solenoid Lock</p>
+
+<div class="grid">
+  <div class="card">
+    <h2>Daftarkan Wajah Baru</h2>
+    <form id="registerForm">
+      <input type="text" id="name" placeholder="Nama orang" required>
+      <input type="file" id="image" accept="image/*" required>
+      <button type="submit">Daftarkan</button>
+      <div class="msg" id="registerMsg"></div>
+    </form>
+
+    <h2 style="margin-top:24px;">Wajah Terdaftar</h2>
+    <ul class="list" id="registeredList"></ul>
+  </div>
+
+  <div class="card">
+    <h2>Log Akses Terbaru</h2>
+    <ul class="list" id="logList"></ul>
+  </div>
+</div>
+
+<script>
+async function loadRegistered() {
+  const res = await fetch('/api/registered');
+  const data = await res.json();
+  const list = document.getElementById('registeredList');
+  list.innerHTML = '';
+  data.forEach(item => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <img src="/static/${item.photo_path}">
+      <div>
+        <div class="name">${item.name}</div>
+        <div class="time">${new Date(item.created_at).toLocaleString('id-ID')}</div>
+      </div>
+      <button class="delete-btn" onclick="deleteFace(${item.id})">Hapus</button>
+    `;
+    list.appendChild(li);
+  });
+}
+
+async function deleteFace(id) {
+  if (!confirm('Hapus wajah ini?')) return;
+  await fetch(`/api/registered/${id}/delete`, { method: 'POST' });
+  loadRegistered();
+}
+
+async function loadLogs() {
+  const res = await fetch('/api/logs');
+  const data = await res.json();
+  const list = document.getElementById('logList');
+  list.innerHTML = '';
+  data.forEach(item => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <img src="/static/${item.photo_path}">
+      <div>
+        <div class="name">${item.name || 'Tidak dikenali'} <span class="badge ${item.matched ? 'ok' : 'no'}">${item.matched ? 'AKSES DIBUKA' : 'DITOLAK'}</span></div>
+        <div class="time">${new Date(item.created_at).toLocaleString('id-ID')} ${item.confidence ? '· ' + Math.round(item.confidence*100) + '%' : ''}</div>
+      </div>
+    `;
+    list.appendChild(li);
+  });
+}
+
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('name').value;
+  const image = document.getElementById('image').files[0];
+  const msg = document.getElementById('registerMsg');
+
+  const formData = new FormData();
+  formData.append('name', name);
+  formData.append('image', image);
+
+  msg.textContent = 'Memproses...';
+  msg.className = 'msg';
+
+  const res = await fetch('/register', { method: 'POST', body: formData });
+  const data = await res.json();
+
+  msg.textContent = data.message;
+  msg.className = 'msg ' + (data.success ? 'ok' : 'err');
+
+  if (data.success) {
+    document.getElementById('registerForm').reset();
+    loadRegistered();
+  }
+});
+
+loadRegistered();
+loadLogs();
+setInterval(loadLogs, 5000); // auto refresh log tiap 5 detik
+</script>
+
+</body>
+</html>

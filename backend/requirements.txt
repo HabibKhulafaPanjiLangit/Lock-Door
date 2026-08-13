@@ -1,0 +1,15 @@
+Flask==3.0.3
+face_recognition==1.3.0
+numpy==1.26.4
+Pillow==10.4.0
+pillow-heif==0.18.0
+opencv-python==4.10.0.84
+
+# Catatan instalasi:
+# - Library "face_recognition" bergantung pada "dlib" yang butuh cmake + C++ compiler.
+#   Di Ubuntu/Debian, install dulu dependency sistem:
+#       sudo apt update && sudo apt install -y cmake build-essential
+#   Baru jalankan: pip install -r requirements.txt
+# - Di Windows, cara paling gampang: install lewat conda
+#       conda install -c conda-forge dlib
+#       pip install face_recognition flask numpy pillow
